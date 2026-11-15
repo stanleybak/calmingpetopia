@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Petopia">
+<meta name="theme-color" content="#7fc8f8">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <meta name="mobile-web-app-capable" content="yes">
 <title>Calming Petopia</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -102,6 +108,8 @@
   #menu{max-height:588px}
   #menu.side .preset{width:46px;height:54px} #menu.side .preset img{height:44px}
   #menu.side .sw{width:26px;height:26px;margin:2px}
+  html,body{height:100dvh;position:fixed;inset:0;width:100%}
+  #touch .tb{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}
 </style>
 </head>
 <body>
@@ -134,7 +142,7 @@
   <button id="sndbtn" title="Sound effects on/off">🔊</button>
   <button id="musbtn" title="Press to play music">🎵</button>
 </div>
-<div id="start" class="show"><div class="big">🌈 Calming Petopia 🌈</div><div>Tap to play</div><div class="small">Goes full screen and sideways</div></div>
+<div id="start" class="show"><div class="big">🌈 Calming Petopia 🌈</div><div>Tap to play</div><div class="small" id="starttip">Goes full screen and sideways</div></div>
 <script>
 // ------------------------------------------------------------------
 // Calming Petopia - a cozy multiplayer pet town for people with big feelings.
@@ -1037,13 +1045,29 @@ $('emojibtn').addEventListener('click',()=>$('emojibar').classList.toggle('open'
 // ---------- touch controls ----------
 const IS_TOUCH=(window.matchMedia&&matchMedia('(pointer: coarse)').matches)||(navigator.maxTouchPoints>0&&/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent));
 function setTouch(on){ document.body.classList.toggle('touch',on); if(!on) $('start').classList.remove('show'); try{ localStorage.setItem('petopia-touch',on?'1':'0'); }catch(e){} fit(); }
-function fit(){ const touch=document.body.classList.contains('touch'), vw=window.innerWidth, vh=window.innerHeight, portrait=touch&&vh>vw; const s=portrait?Math.min(vh/W,vw/H):Math.min(vw/W,vh/H)*(touch?1:0.98); $('wrap').style.transform=`translate(-50%,-50%) ${portrait?'rotate(90deg) ':''}scale(${s})`; }
+function fit(){ const vv=window.visualViewport, touch=document.body.classList.contains('touch'), vw=vv?vv.width:window.innerWidth, vh=vv?vv.height:window.innerHeight, portrait=touch&&vh>vw; const s=portrait?Math.min(vh/W,vw/H):Math.min(vw/W,vh/H)*(touch?1:0.98); $('wrap').style.transform=`translate(-50%,-50%) ${portrait?'rotate(90deg) ':''}scale(${s})`; }
 function updateTouchLayout(){ document.body.classList.toggle('home',sceneName==='home'); const yg=sceneName==='yoga'; $('t-talk').innerHTML=yg?'▼<small>down</small>':'💬<small>pet</small>'; $('t-jump').innerHTML=yg?'▲<small>up</small>':'⤒<small>jump</small>'; const inGame=!!(S&&S.look)&&sceneName!=='title'&&sceneName!=='create'&&sceneName!=='feelings'; $('t-tab').style.display=(inGame&&S.pets.length>1)?'flex':'none'; $('t-esc').style.display=(inGame&&sceneName!=='street'&&sceneName!=='fun')?'flex':'none'; $('t-act').style.display=(inGame&&!['home','climb','arena','adv','park'].includes(sceneName))?'flex':'none'; $('t-talk').style.display=(inGame&&(S.pets.length||yg))?'flex':'none'; $('t-pat').style.display=(inGame&&yg&&S.pets.length)?'flex':'none'; for(const id of ['t-left','t-right','t-jump']) $(id).style.display=inGame?'flex':'none'; fit(); }
 (function(){ let pref=null; try{ pref=localStorage.getItem('petopia-touch'); }catch(e){} setTouch(pref==null?IS_TOUCH:pref==='1'); $('t-toggle').addEventListener('click',()=>setTouch(!document.body.classList.contains('touch')));
-  for(const b of document.querySelectorAll('#touch .tb')){ const k=b.dataset.k; const down=e=>{ e.preventDefault(); if(!keys[k]) pressed[k]=true; keys[k]=true; b.classList.add('on'); if(k==='escape'&&menuOpen&&menuClosable) hideMenu(); }; const up=e=>{ e.preventDefault(); keys[k]=false; b.classList.remove('on'); };
-    b.addEventListener('pointerdown',down); b.addEventListener('pointerup',up); b.addEventListener('pointercancel',up); b.addEventListener('pointerleave',up); b.addEventListener('contextmenu',e=>e.preventDefault()); }
+  // Mouse: plain press and release on each button.
+  const btnFor={}; for(const b of document.querySelectorAll('#touch .tb')){ const k=b.dataset.k; (btnFor[k]=btnFor[k]||[]).push(b);
+    b.addEventListener('pointerdown',e=>{ if(e.pointerType==='touch') return; e.preventDefault(); touchSet(k,true,'mouse'); }); for(const ev of ['pointerup','pointercancel','pointerleave']) b.addEventListener(ev,e=>{ if(e.pointerType==='touch') return; touchSet(k,false,'mouse'); }); b.addEventListener('contextmenu',e=>e.preventDefault()); }
+  // Fingers: after every touch event, look at which buttons have a finger on them right now. A button is down
+  // only while a finger is really on it, so a missed "finger lifted" event can never leave an arrow stuck.
+  const held={mouse:new Set(),touch:new Set()};
+  function touchSet(k,on,src){ const was=held.mouse.has(k)||held.touch.has(k); if(on) held[src].add(k); else held[src].delete(k); const is=held.mouse.has(k)||held.touch.has(k); if(is===was) return;
+    for(const b of btnFor[k]||[]) b.classList.toggle('on',is); if(is){ if(!keys[k]) pressed[k]=true; keys[k]=true; if(k==='escape'&&menuOpen&&menuClosable) hideMenu(); } else keys[k]=false; }
+  function syncTouches(e){ const now=new Set(); for(const t of e.touches){ const el=document.elementFromPoint(t.clientX,t.clientY), b=el&&el.closest&&el.closest('#touch .tb'); if(b) now.add(b.dataset.k); }
+    for(const k of [...held.touch]) if(!now.has(k)) touchSet(k,false,'touch'); for(const k of now) if(!held.touch.has(k)) touchSet(k,true,'touch');
+    const tb=e.target&&e.target.closest&&e.target.closest('#touch .tb'); if(tb&&e.cancelable) e.preventDefault(); }
+  for(const ev of ['touchstart','touchmove','touchend','touchcancel']) document.addEventListener(ev,syncTouches,{passive:false});
+  const releaseAll=()=>{ for(const k of [...held.touch]) touchSet(k,false,'touch'); for(const k of [...held.mouse]) touchSet(k,false,'mouse'); for(const k in keys) keys[k]=false; };
+  window.addEventListener('blur',releaseAll); window.addEventListener('pagehide',releaseAll); document.addEventListener('visibilitychange',()=>{ if(document.hidden) releaseAll(); });
+  window.__touchState=()=>({touch:[...held.touch],mouse:[...held.mouse]});
   $('start').addEventListener('click',()=>{ const el=document.documentElement, req=el.requestFullscreen||el.webkitRequestFullscreen; let p=null; try{ p=req?req.call(el,{navigationUI:'hide'}):null; }catch(e){} const lock=()=>{ try{ if(screen.orientation&&screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{}); }catch(e){} }; if(p&&p.then) p.then(lock,lock); else lock(); $('start').classList.remove('show'); setTimeout(fit,100); setTimeout(fit,600); });
-  document.addEventListener('fullscreenchange',()=>setTimeout(fit,100)); window.addEventListener('resize',fit); })();
+  document.addEventListener('fullscreenchange',()=>setTimeout(fit,100)); window.addEventListener('resize',fit); window.addEventListener('orientationchange',()=>{ setTimeout(fit,150); setTimeout(fit,600); }); if(window.visualViewport) window.visualViewport.addEventListener('resize',fit);
+  // iPhones and iPads cannot be put in full screen by a web page. The way to get it is to add the game to the Home Screen.
+  const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1), standalone=window.navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||(window.matchMedia&&matchMedia('(display-mode: fullscreen)').matches);
+  const tip=$('starttip'); if(tip) tip.innerHTML=standalone?'':isIOS?'For full screen on iPhone or iPad:<br>tap the Share button <b>⬆️</b>, choose <b>Add to Home Screen</b>,<br>then open Petopia from your Home Screen.':'Goes full screen and sideways'; })();
 
 // in yoga, tapping or clicking the picture counts as pressing the arrow that is showing
 canvas.addEventListener('pointerdown',()=>{ if(sceneName==='yoga'&&scene.on&&scene.hold<=0&&!menuOpen&&POSES[scene.i]) pressed[POSES[scene.i].k]=true; });

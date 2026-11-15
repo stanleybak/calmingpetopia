@@ -111,6 +111,8 @@
   html,body{height:100dvh;position:fixed;inset:0;width:100%}
   #touch .tb{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}
   body.arcgame #hud{display:none}
+  .tb.alert{background:#ffe29a;animation:pulse .7s ease-in-out infinite alternate}
+  @keyframes pulse{to{transform:scale(1.12);background:#ffd34d}}
 </style>
 </head>
 <body>
@@ -129,7 +131,7 @@
     <button class="tb" id="t-left" data-k="arrowleft">◀</button>
     <button class="tb" id="t-right" data-k="arrowright">▶</button>
     <button class="tb big" id="t-jump" data-k=" ">⤒<small>jump</small></button>
-    <button class="tb" id="t-act" data-k="e">✋<small>go / E</small></button>
+    <button class="tb" id="t-act" data-k="e">✋<small>go / do</small></button>
     <button class="tb" id="t-talk" data-k="arrowdown">💬<small>pet</small></button>
     <button class="tb" id="t-pat" data-k="h">🤚<small>pet</small></button>
     <button class="tb pill" id="t-esc" data-k="escape">🚪 leave</button>
@@ -293,12 +295,23 @@ window.addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; });
 function hit(k){ return !!pressed[k]; }
 const jumpHit=()=>hit(' ')||hit('arrowup'), jumpHeld=()=>keys[' ']||keys.arrowup;
 
+// ---------- touch wording ----------
+// The game's messages are written for a keyboard ("press E"). On a touchscreen there are no keys, so every
+// message, prompt and label passes through here and names the button on the screen instead.
+const TOUCH_WORDS=[ [/\bE: /g,'✋ '], [/\b[Pp]ress(?:ing)? E or Space\b/g,m=>m[0]==='P'?'Tap ✋':'tap ✋'], [/\bE or Space\b/g,'✋'], [/\b[Pp]ress E\b/g,m=>m[0]==='P'?'Tap ✋':'tap ✋'], [/\band press E\b/g,'and tap ✋'],
+  [/\(press F\)/g,'(tap 🥫 feed)'], [/\(press Z\)/g,'(tap 💤 nap)'], [/\(press P\)/g,'(tap 🎾 play)'], [/\(Z\)/g,'(tap 💤)'], [/\(C\)/g,'(tap 🕯️)'], [/\bW: wardrobe/g,'tap 👕 me'], [/Press W to/g,'Tap 👕 to'], [/\(F at home\)/g,'(🥫 at home)'],
+  [/[Pp]ress ⬇️/g,m=>m[0]==='P'?'Tap 📣':'tap 📣'], [/\(Esc\)/g,'(🚪 leave)'], [/\bEsc: stop/g,'🚪 stops'], [/\bEsc\b/g,'🚪'],
+  [/Press Space when/g,'Tap ⤒ when'], [/\bSpace or ⬆️ jumps/g,'⤒ jumps'], [/\bSpace drops/g,'⤒ drops'], [/^Space!$/g,'Tap ⤒!'], [/\(Tab: switch\)/g,'(🔁 switch)'],
+  [/press that arrow key, or click this arrow/g,'tap this arrow'], [/then press them/g,'then tap them'], [/⬅️ ⬆️ ➡️ pick/g,'◀ ▲ ▶ pick'], [/Arrow keys steer/g,'◀ ▶ ▲ ▼ steer'], [/⬅️➡️/g,'◀ ▶'] ];
+const touchCache=new Map(); let isTouch=false;
+function tw(t){ if(!isTouch||typeof t!=='string'||t.length<2) return t; let r=touchCache.get(t); if(r!==undefined) return r; r=t; if(/E: |[Pp]ress|Esc|Space|Tab:|\((?:Z|C)\)|W: |F at home|⬅️|Arrow keys/.test(t)) for(const [a,b] of TOUCH_WORDS) r=r.replace(a,b); if(touchCache.size>4000) touchCache.clear(); touchCache.set(t,r); return r; }
+
 // ---------- UI helpers ----------
 function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 let msgTimer=null, toastTimer=null, menuOpen=false, menuClosable=false, menuTick=null;
-function showMsg(who,text,secs=4){ const m=$('msg'); m.innerHTML=(who?`<span class="who">${who}</span>`:'')+text; m.style.display='block'; clearTimeout(msgTimer); if(secs>0) msgTimer=setTimeout(()=>m.style.display='none',secs*1000); }
+function showMsg(who,text,secs=4){ text=tw(text); const m=$('msg'); m.innerHTML=(who?`<span class="who">${who}</span>`:'')+text; m.style.display='block'; clearTimeout(msgTimer); if(secs>0) msgTimer=setTimeout(()=>m.style.display='none',secs*1000); }
 function hideMsg(){ $('msg').style.display='none'; }
-function toast(t){ const el=$('toast'); el.textContent=t; el.style.display='none'; void el.offsetWidth; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',1600); }
+function toast(t){ t=tw(t); const el=$('toast'); el.textContent=t; el.style.display='none'; void el.offsetWidth; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',1600); }
 function showMenu(html, opts={}){ const m=$('menu'); m.style.maxWidth=''; m.innerHTML=html; m.className='ov card'+(opts.side?' side':''); m.style.display='block'; menuOpen=true; menuClosable=!!m.querySelector('button[onclick="hideMenu()"]'); clearInterval(menuTick); menuTick=null; }
 function hideMenu(){ $('menu').style.display='none'; menuOpen=false; clearInterval(menuTick); menuTick=null; }
 function setHint(h){ $('hint').innerHTML=h; $('hint').style.display=h?'block':'none'; }
@@ -316,14 +329,14 @@ function updateHUD(){
   const pet=activePet();
   if(pet){ $('petcard').style.display='block';
     const bar=(label,v,col)=>`<div class="row"><span>${label}</span><span>${Math.round(v)}</span></div><div class="bar"><i style="width:${v}%;background:${col}"></i></div>`;
-    $('petcard').innerHTML=`<b>${PETS[pet.type].emoji} ${esc(pet.name)}</b> ${moodEmoji(pet)} <span class="small">${S.pets.length>1?'(Tab: switch)':''}</span>`+bar('Food',pet.hunger,'#ffb347')+bar('Energy',pet.energy,'#a8d8ff')+bar('Happy',pet.happy,'#ff8fab')+bar('Trust ♥',pet.trust,'#c77dff')+`<div class="row"><span>🎓 Obedience</span><span>${(pet.skills||[]).length}/${SKILLS.length}</span></div>`;
+    $('petcard').innerHTML=`<b>${PETS[pet.type].emoji} ${esc(pet.name)}</b> ${moodEmoji(pet)} <span class="small">${S.pets.length>1?tw('(Tab: switch)'):''}</span>`+bar('Food',pet.hunger,'#ffb347')+bar('Energy',pet.energy,'#a8d8ff')+bar('Happy',pet.happy,'#ff8fab')+bar('Trust ♥',pet.trust,'#c77dff')+`<div class="row"><span>🎓 Obedience</span><span>${(pet.skills||[]).length}/${SKILLS.length}</span></div>`;
   } else $('petcard').style.display='none';
 }
 
 // ---------- drawing helpers ----------
 function drawSprite(name,x,y,h,o={}){ const im=o.skin?skinned(name,o.skin):IMG[name]; if(!im) return; const w=im.width/im.height*h; ctx.save(); ctx.translate(x,y+(o.bob||0)); if(o.rot) ctx.rotate(o.rot); if(o.flip) ctx.scale(-1,1); if(o.sx||o.sy) ctx.scale(o.sx||1,o.sy||1); if(o.alpha!=null) ctx.globalAlpha=o.alpha; ctx.drawImage(im,-w/2,-h,w,h); ctx.restore(); return w; }
 function rr(x,y,w,h,r,fill,stroke){ ctx.beginPath(); ctx.roundRect(x,y,w,h,r); if(fill){ctx.fillStyle=fill;ctx.fill();} if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=3;ctx.stroke();} }
-function text(t,x,y,size=18,col=INK,align='center',bold=false){ ctx.font=`${bold?'bold ':''}${size}px ${FONT}`; ctx.fillStyle=col; ctx.textAlign=align; ctx.textBaseline='middle'; ctx.fillText(t,x,y); }
+function text(t,x,y,size=18,col=INK,align='center',bold=false){ t=tw(t); ctx.font=`${bold?'bold ':''}${size}px ${FONT}`; ctx.fillStyle=col; ctx.textAlign=align; ctx.textBaseline='middle'; ctx.fillText(t,x,y); }
 function heart(x,y,s,col='#ff5c8a'){ ctx.save(); ctx.translate(x,y); ctx.scale(s/20,s/20); ctx.beginPath(); ctx.moveTo(0,6); ctx.bezierCurveTo(-12,-6,-6,-16,0,-8); ctx.bezierCurveTo(6,-16,12,-6,0,6); ctx.fillStyle=col; ctx.fill(); ctx.strokeStyle=INK; ctx.lineWidth=2; ctx.stroke(); ctx.restore(); }
 function coin(x,y,r=11){ const sx=Math.abs(Math.cos(T*3+x*0.01)); ctx.save(); ctx.translate(x,y); ctx.scale(0.35+0.65*sx,1); ctx.beginPath(); ctx.arc(0,0,r,0,7); ctx.fillStyle='#ffd34d'; ctx.fill(); ctx.strokeStyle='#b8860b'; ctx.lineWidth=3; ctx.stroke(); ctx.fillStyle='#b8860b'; ctx.font=`bold ${r}px ${FONT}`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('P',0,1); ctx.restore(); }
 function cloud(x,y,s,col='rgba(255,255,255,.9)'){ ctx.fillStyle=col; for(const [dx,dy,r] of [[0,0,22],[18,-8,18],[-20,-4,16],[34,4,14],[-34,6,12]]){ ctx.beginPath(); ctx.arc(x+dx*s,y+dy*s,r*s,0,7); ctx.fill(); } }
@@ -351,7 +364,7 @@ function drawOutfit(id,x,y,w){ if(!id||id==='none') return; ctx.save(); ctx.stro
   if(id==='flower'){ const fx=x+w*0.32, fy=y+4; ctx.fillStyle='#ff8fab'; for(let i=0;i<5;i++){ const a=i/5*6.283; ctx.beginPath(); ctx.arc(fx+Math.cos(a)*7,fy+Math.sin(a)*7,5.5,0,7); ctx.fill(); } ctx.fillStyle='#ffe29a'; ctx.beginPath(); ctx.arc(fx,fy,4.5,0,7); ctx.fill(); }
   if(id==='ears'){ ctx.fillStyle='#ffc878'; for(const d of [-1,1]){ ctx.beginPath(); ctx.moveTo(x+d*w*0.42,y+10); ctx.lineTo(x+d*w*0.36,y-16); ctx.lineTo(x+d*w*0.12,y+2); ctx.closePath(); ctx.fill(); ctx.stroke(); } }
   ctx.restore(); }
-function speechBubble(x,y,t,size=15){ ctx.font=`${size}px ${FONT}`; const w=ctx.measureText(t).width+22; rr(x-w/2,y-size-19,w,size+15,12,'#fff',INK); ctx.beginPath(); ctx.moveTo(x-6,y-4); ctx.lineTo(x,y+6); ctx.lineTo(x+6,y-4); ctx.fillStyle='#fff'; ctx.fill(); text(t,x,y-size/2-11,size); }
+function speechBubble(x,y,t,size=15){ t=tw(t); ctx.font=`${size}px ${FONT}`; const w=ctx.measureText(t).width+22; rr(x-w/2,y-size-19,w,size+15,12,'#fff',INK); ctx.beginPath(); ctx.moveTo(x-6,y-4); ctx.lineTo(x,y+6); ctx.lineTo(x+6,y-4); ctx.fillStyle='#fff'; ctx.fill(); text(t,x,y-size/2-11,size); }
 function building(x,g,w,h,col,roof,label,deco){ rr(x-w/2,g-h,w,h+4,6,col,INK); ctx.fillStyle=roof; ctx.beginPath(); ctx.moveTo(x-w/2-16,g-h); ctx.lineTo(x-w/2+20,g-h-46); ctx.lineTo(x+w/2-20,g-h-46); ctx.lineTo(x+w/2+16,g-h); ctx.closePath(); ctx.fill(); ctx.strokeStyle=INK; ctx.lineWidth=3; ctx.stroke(); rr(x-26,g-92,52,92,6,'#a8d8ff',INK); ctx.fillStyle=INK; ctx.beginPath(); ctx.arc(x+16,g-46,3,0,7); ctx.fill(); for(const d of [-1,1]) rr(x+d*(w/2-52)-22,g-h+34,44,44,4,'#dff4ff',INK); rr(x-w/2+14,g-h-34,w-28,28,8,'#fffdf7',INK); text(label,x,g-h-20,15,INK,'center',true); if(deco) deco(); }
 
 // ---------- avatars ----------
@@ -457,12 +470,12 @@ let chatterT=12, patCd=0, patT=-9;
 // until it calms down. Every trick it learns makes this rarer; a pet that knows them all never runs wild.
 const Wild={next:14,on:0,t0:0,told:false}, WILD_SCENES=['street','fun','park','garden'];
 function obedience(p){ return ((p&&p.skills)||[]).length/SKILLS.length; }
-function tickWild(dt){ const p=activePet(); if(!p||!scene||!scene.p||!WILD_SCENES.includes(sceneName)||menuOpen){ if(!WILD_SCENES.includes(sceneName)) Wild.on=0; return; }
-  if(Wild.on>0){ Wild.on-=dt; if(Wild.on<=0){ Wild.next=20+Math.random()*18; petSay(p,"*pant pant* Okay. I'm calm now.",2.5); } return; }
+function tickWild(dt){ const p=activePet(); if(!p||!scene||!scene.p||!WILD_SCENES.includes(sceneName)||menuOpen){ if(!WILD_SCENES.includes(sceneName)&&Wild.on>0){ Wild.on=0; updateTouchLayout(); } return; }
+  if(Wild.on>0){ Wild.on-=dt; if(Wild.on<=0){ Wild.next=20+Math.random()*18; updateTouchLayout(); petSay(p,"*pant pant* Okay. I'm calm now.",2.5); } return; }
   Wild.next-=dt; if(Wild.next>0) return; Wild.next=20+Math.random()*18; if(Math.random()<obedience(p)||playdate>0) return;
-  Wild.on=4.5; Wild.t0=T; sfx('vla_tune',0.25,2); const first=!Wild.told; Wild.told=true;
+  Wild.on=4.5; Wild.t0=T; updateTouchLayout(); sfx('vla_tune',0.25,2); const first=!Wild.told; Wild.told=true;
   showMsg(`${PETS[p.type].emoji} ${esc(p.name)}`,first?`ZOOMIES! ${esc(p.name)} is running wild. Press ⬇️ to call them back. Pets learn to listen at the Pet Obedience School: each trick makes them calmer.`:"ZOOMIES! Wheeeee! (press ⬇️ to call me)",first?7:3); }
-function callPet(){ const p=activePet(); if(!p||Wild.on<=0) return false; if(Math.random()<0.35+obedience(p)*0.65){ Wild.on=0; Wild.next=20+Math.random()*18; petSay(p,"Coming! I'm a good listener.",2.5); spawn(scene.p.x,scene.p.y-100,'heart',5); } else petSay(p,"Can't stop! Too excited! Try again!",2); return true; }
+function callPet(){ const p=activePet(); if(!p||Wild.on<=0) return false; if(Math.random()<0.35+obedience(p)*0.65){ Wild.on=0; Wild.next=20+Math.random()*18; updateTouchLayout(); petSay(p,"Coming! I'm a good listener.",2.5); spawn(scene.p.x,scene.p.y-100,'heart',5); } else petSay(p,"Can't stop! Too excited! Try again!",2); return true; }
 // pet your pet: hearts, a happy sound, a little more happiness and trust
 function patPet(px,py){ const p=activePet(); if(!p||T<patCd) return false; patCd=T+1.0; patT=T; sfx('hum3_0',0.3,0.95+Math.random()*0.15); p.happy=clamp(p.happy+6); p.trust=clamp(p.trust+0.5); spawn(px,py-60,'heart',7); Snd.petT=-99;
   const lines={cat:["Purrrrrr...","Right behind the ears, please.","*slow happy blink*"],dog:["*tail wagging so fast*","More pets! More!","That's the spot!"],bird:["*fluffs up feathers*","Tweet! Gentle scritches!","*leans into your hand*"],bunny:["*nose wiggles*","*happy flop*","So soft and cozy."]}[p.type]||["That feels nice."];
@@ -600,14 +613,14 @@ function drawCast(key,a,h,petH,cam=0,camY=0,lag=14){ const pet=activePet(); let 
   const top=drawAvatar(S.look,a.x-cam,a.y-camY,h,{face:a.face,walkT:a.walkT,moving:a.moving,air:!a.onGround,pose:myPose(),mood:S.feeling});
   if(Net.game) nameTag(S.name,S.feeling,a.x-cam,top-8); if(myEmoji.e&&T-myEmoji.t<3.5) speechBubble(a.x-cam,top-(Net.game?34:10),myEmoji.e,26); }
 function commonKeys(){ if(hit('tab')&&S.pets.length>1){ S.active=(S.active+1)%S.pets.length; save(); updateHUD(); petSay(activePet(),"I'm with you now!"); } }
-function prompt(x,y,t){ ctx.font=`bold 16px ${FONT}`; const w=ctx.measureText(t).width+28; rr(x-w/2,y-18,w,36,12,'#fffdf7',INK); text(t,x,y,16,INK,'center',true); }
+function prompt(x,y,t){ t=tw(t); ctx.font=`bold 16px ${FONT}`; const w=ctx.measureText(t).width+28; rr(x-w/2,y-18,w,36,12,'#fffdf7',INK); text(t,x,y,16,INK,'center',true); }
 
 // ===== TITLE =====
 SCENES.title={ enter(){ setHint(''); const has=load(); const touch=document.body.classList.contains('touch');
     showMenu(`<h1>🌈 Calming Petopia 🌈</h1><p>A cozy pet town for people with big feelings.<br>Adopt pets, care for them, explore the town and find the hidden scrolls.</p>
     ${has?`<button class="pink" onclick="startGame(true)">▶ Continue as ${esc(has.name||'me')}</button>`:''}<button class="blue" onclick="startGame(false)">${has?'Start over':'▶ Play'}</button>
     <p class="small">Friends playing on the same wifi show up in your town automatically.</p>
-    <p class="small">${touch?'◀ ▶ move · ⤒ jump · ✋ go in · 💬 talk to your pet ':'⬅️➡️ move · ⬆️ or Space jump · ⬇️ talk to your pet · E or Enter: go in / do · Esc: leave'}</p>`); },
+    <p class="small">${touch?'Use the buttons on the screen: ◀ ▶ move · ⤒ jump · ✋ go in or do · 💬 talk to your pet ':'⬅️➡️ move · ⬆️ or Space jump · ⬇️ talk to your pet · E or Enter: go in / do · Esc: leave'}</p>`); },
   update(){}, draw(){ sky('#ffb3c6','#fff3a0'); sun(820,110); cloud(150,120,1.2); cloud(500,80,0.9); cloud(760,200,0.7); ctx.fillStyle='#9be38f'; ctx.fillRect(0,470,W,130);
     ['cat2','dog2','bird2','bunny2'].forEach((n,i)=>drawSprite(n,130+i*240,470,120,{bob:Math.sin(T*3+i)*-8,rot:Math.sin(T*3+i)*0.05})); drawSprite('bird3',160+((T*40)%1100)-150,150+Math.sin(T*2)*20,70,{flip:true}); drawSprite('mira',860,330+Math.sin(T*2.2)*12,90); } };
 function startGame(cont,sure){ if(cont){ S=load(); applyOffline(); openFeelings(false); } else { if(load()&&!sure){ showMenu(`<h2>Start over?</h2><p>This erases your saved Petopia: your pets, coins and scrolls.</p><button class="pink" onclick="startGame(false,true)">Yes, start fresh</button><button onclick="go('title')">No, keep it</button>`); return; } S=newSave(); go('create',{first:true}); } }
@@ -966,7 +979,7 @@ const ARC={
     prize(){ return clamp(Math.round(this.score*1.5),0,12); } },
   count:{label:'Critter Count',e:'🐞',col:'#b8f0b0',help:'Count the creatures before they hide · ⬅️ ⬆️ ➡️ pick the number',
     start(){ this.n=0; this.score=0; this.over=false; this.round(); },
-    round(){ const ks=['g_ladybug','g_bee','g_butterfly','g_ant','g_beetle','g_firefly']; this.k=ks[Math.floor(Math.random()*ks.length)]; this.cnt=4+Math.floor(Math.random()*(5+this.n)); this.at=[]; for(let i=0;i<this.cnt;i++) this.at.push({x:AX+50+Math.random()*(AW-100),y:AY+70+Math.random()*(AH-170),r:Math.random()*0.6-0.3}); const o=new Set([this.cnt]); while(o.size<3){ const v=this.cnt+[-2,-1,1,2][Math.floor(Math.random()*4)]; if(v>1) o.add(v); } this.opts=[...o].sort(()=>Math.random()-0.5); this.t=Math.max(1.3,2.8-this.n*0.3); this.ph='look'; },
+    round(){ const ks=['g_ladybug','g_bee','g_butterfly','g_ant','g_beetle','g_firefly']; this.k=ks[Math.floor(Math.random()*ks.length)]; this.cnt=4+Math.floor(Math.random()*(5+this.n)); this.at=[]; for(let i=0;i<this.cnt;i++) this.at.push({x:AX+50+Math.random()*(AW-100),y:AY+70+Math.random()*(AH-170),r:Math.random()*0.6-0.3}); const o=new Set([this.cnt]); while(o.size<3){ const v=this.cnt+[-2,-1,1,2][Math.floor(Math.random()*4)]; if(v>1) o.add(v); } this.opts=[...o].sort(()=>Math.random()-0.5); this.t=Math.max(3.5,2.5+this.cnt*0.55-this.n*0.25); this.ph='look'; },
     update(dt){ this.t-=dt; if(this.ph==='look'){ if(this.t<=0) this.ph='pick'; return; } if(this.ph==='res'){ if(this.t<=0){ this.n++; if(this.n>=5) this.over=true; else this.round(); } return; } const k=hit('arrowleft')?0:(hit('arrowup')||hit(' '))?1:hit('arrowright')?2:-1; if(k<0) return; this.pick=k; this.good=this.opts[k]===this.cnt; if(this.good){ this.score++; sfx('rec_ding',0.4); } else sfx('vla_b',0.3,0.6); this.ph='res'; this.t=1.3; },
     draw(){ arcScreen('🐞 Critter Count',`round ${Math.min(this.n+1,5)}/5 · right ${this.score}`); if(this.ph!=='pick') for(const q of this.at) drawSprite(this.k,q.x,q.y+24,46,{rot:q.r}); else text('How many were there?',AX+AW/2,AY+AH/2-40,24,'#fff','center',true);
       if(this.ph!=='look') this.opts.forEach((v,i)=>{ const cx=AX+AW/6+i*AW/3; rr(cx-56,AY+AH-78,112,58,14,this.ph==='res'?(v===this.cnt?'#7bd67b':i===this.pick?'#ff8f8f':'#4a3f6b'):'#c77dff','#fff'); text(String(v),cx,AY+AH-52,28,'#fff','center',true); text(['⬅️','⬆️','➡️'][i],cx,AY+AH-96,16); }); else text(`look! ${Math.ceil(this.t)}`,AX+AW-60,AY+24,16,'#fff'); },
@@ -1285,9 +1298,9 @@ $('emojibtn').addEventListener('click',()=>$('emojibar').classList.toggle('open'
 
 // ---------- touch controls ----------
 const IS_TOUCH=(window.matchMedia&&matchMedia('(pointer: coarse)').matches)||(navigator.maxTouchPoints>0&&/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent));
-function setTouch(on){ document.body.classList.toggle('touch',on); if(!on) $('start').classList.remove('show'); try{ localStorage.setItem('petopia-touch',on?'1':'0'); }catch(e){} fit(); }
+function setTouch(on){ isTouch=on; touchCache.clear(); document.body.classList.toggle('touch',on); if(!on) $('start').classList.remove('show'); try{ localStorage.setItem('petopia-touch',on?'1':'0'); }catch(e){} fit(); }
 function fit(){ const vv=window.visualViewport, touch=document.body.classList.contains('touch'), vw=vv?vv.width:window.innerWidth, vh=vv?vv.height:window.innerHeight, portrait=touch&&vh>vw; const s=portrait?Math.min(vh/W,vw/H):Math.min(vw/W,vh/H)*(touch?1:0.98); $('wrap').style.transform=`translate(-50%,-50%) ${portrait?'rotate(90deg) ':''}scale(${s})`; }
-function updateTouchLayout(){ document.body.classList.toggle('home',sceneName==='home'); document.body.classList.toggle('arcgame',sceneName==='arcade'&&!!(scene&&scene.mode)); const yg=sceneName==='yoga'||(sceneName==='arcade'&&scene&&scene.mode), shoot=sceneName==='hoops'?'🏀<small>shoot</small>':sceneName==='bball'?'⚾<small>swing</small>':null; $('t-talk').innerHTML=yg?'▼<small>down</small>':'💬<small>pet</small>'; $('t-jump').innerHTML=yg?'▲<small>up</small>':shoot||'⤒<small>jump</small>'; const inGame=!!(S&&S.look)&&sceneName!=='title'&&sceneName!=='create'&&sceneName!=='feelings'; $('t-tab').style.display=(inGame&&S.pets.length>1)?'flex':'none'; $('t-esc').style.display=(inGame&&sceneName!=='street'&&sceneName!=='fun')?'flex':'none'; $('t-act').style.display=(inGame&&!['home','climb','arena','volley','hoops','bball','adv','park'].includes(sceneName))?'flex':'none'; $('t-talk').style.display=(inGame&&(S.pets.length||yg))?'flex':'none'; $('t-pat').style.display=(inGame&&sceneName==='yoga'&&S.pets.length)?'flex':'none'; for(const id of ['t-left','t-right','t-jump']) $(id).style.display=inGame?'flex':'none'; fit(); }
+function updateTouchLayout(){ document.body.classList.toggle('home',sceneName==='home'); document.body.classList.toggle('arcgame',sceneName==='arcade'&&!!(scene&&scene.mode)); const yg=sceneName==='yoga'||(sceneName==='arcade'&&scene&&scene.mode), shoot=sceneName==='hoops'?'🏀<small>shoot</small>':sceneName==='bball'?'⚾<small>swing</small>':null; $('t-talk').innerHTML=yg?'▼<small>down</small>':Wild.on>0?'📣<small>call pet</small>':'💬<small>talk</small>'; $('t-talk').classList.toggle('alert',!yg&&Wild.on>0); $('t-jump').innerHTML=yg?'▲<small>up</small>':shoot||'⤒<small>jump</small>'; const inGame=!!(S&&S.look)&&sceneName!=='title'&&sceneName!=='create'&&sceneName!=='feelings'; $('t-tab').style.display=(inGame&&S.pets.length>1)?'flex':'none'; $('t-esc').style.display=(inGame&&sceneName!=='street'&&sceneName!=='fun')?'flex':'none'; $('t-act').style.display=(inGame&&!['home','climb','arena','volley','hoops','bball','adv','park'].includes(sceneName))?'flex':'none'; $('t-talk').style.display=(inGame&&(S.pets.length||yg))?'flex':'none'; $('t-pat').style.display=(inGame&&sceneName==='yoga'&&S.pets.length)?'flex':'none'; for(const id of ['t-left','t-right','t-jump']) $(id).style.display=inGame?'flex':'none'; fit(); }
 (function(){ let pref=null; try{ pref=localStorage.getItem('petopia-touch'); }catch(e){} setTouch(pref==null?IS_TOUCH:pref==='1'); $('t-toggle').addEventListener('click',()=>setTouch(!document.body.classList.contains('touch')));
   // Mouse: plain press and release on each button.
   const btnFor={}; for(const b of document.querySelectorAll('#touch .tb')){ const k=b.dataset.k; (btnFor[k]=btnFor[k]||[]).push(b);
